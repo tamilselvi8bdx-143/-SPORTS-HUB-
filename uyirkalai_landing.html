@@ -1592,19 +1592,34 @@ function openStudentProfile(studentId) {
   `;
 }
 
-function renderStudents() {
+function renderStudents(searchOverride) {
   const cont = document.getElementById('roster-dynamic-content');
   if(!cont) return;
   cont.className = 'roster-grid';
   
-  const searchT = document.getElementById('roster-search').value.toLowerCase().trim();
+  const searchT = (searchOverride !== undefined ? searchOverride : (document.getElementById('roster-search') ? document.getElementById('roster-search').value : '')).toLowerCase().trim();
   let html = '';
   
-  const activeStudents = (window.ukLiveStudents || []).filter(s => s.status !== 'Inactive' && (s.branch === currentRosterBranch || (!s.branch && currentRosterBranch === 'Main')));
+  const allStudents = window.ukLiveStudents || [];
+  
+  // Branch matching — case-insensitive + trimmed
+  const branchLower = (currentRosterBranch || '').toLowerCase().trim();
+  
+  const activeStudents = allStudents.filter(s => {
+    if (s.status === 'Inactive') return false;
+    const sBranch = (s.branch || '').toLowerCase().trim();
+    // If student has no branch, show in all branches
+    if (!sBranch) return true;
+    return sBranch === branchLower;
+  });
+  
   const filtered = activeStudents.filter(s => s.name && s.name.toLowerCase().includes(searchT));
   
   if(filtered.length === 0) {
-    cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);">No warriors found in this branch matching "${searchT}".</div>`;
+    const msg = searchT 
+      ? `No warriors found matching "${searchT}".`
+      : `No students found in this branch.<br><small style="font-size:11px;">Make sure students are added in the Uyir Kalai admin app with a matching branch name.</small>`;
+    cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);">${msg}</div>`;
     return;
   }
   
