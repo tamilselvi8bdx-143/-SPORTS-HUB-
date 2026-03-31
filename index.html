@@ -253,6 +253,10 @@ textarea{resize:vertical;min-height:80px;}
 
     window.cloudSaveUK = async function(){
       try{
+        if(!ukStudents || !ukStudents.length) {
+            console.log('Safety: ukStudents empty, skipping cloud save');
+            return;
+        }
         // ── Main doc: all data except student photos ──
         const studentsNoPhoto = ukStudents.map(s=>({...s, photo:'', video:''}));
         const postsCloud = await Promise.all(ukPosts.map(async(p)=>({
@@ -350,34 +354,65 @@ textarea{resize:vertical;min-height:80px;}
       const remoteTs=d.ts||0;
       const localTs=parseInt(localStorage.getItem('uk_ts')||'0');
       if(remoteTs<=localTs)return;
-      if(d.posts)ukPosts=JSON.parse(d.posts);
-      if(d.events)ukEvents=JSON.parse(d.events);
-      if(d.lives)ukLiveSessions=JSON.parse(d.lives);
-      if(d.students)ukStudents=JSON.parse(d.students);
-      if(d.branches)ukBranches=JSON.parse(d.branches);
-      if(d.attendance)ukAttendance=JSON.parse(d.attendance);
-      if(d.achievements)ukAchievements=JSON.parse(d.achievements);
-      if(d.members)ukMembers=JSON.parse(d.members);
-      if(d.settings)ukSettings=JSON.parse(d.settings);
-      if(d.fees)ukFeeData=JSON.parse(d.fees);
-      if(d.logo)ukLogoURL=d.logo;
+
+      // Immediately parse all fields
+      let incomingStudents = d.students ? JSON.parse(d.students) : ukStudents;
+      ukPosts = d.posts?JSON.parse(d.posts):ukPosts;
+      ukEvents = d.events?JSON.parse(d.events):ukEvents;
+      ukLiveSessions = d.lives?JSON.parse(d.lives):ukLiveSessions;
+      ukBranches = d.branches?JSON.parse(d.branches):ukBranches;
+      ukAttendance = d.attendance?JSON.parse(d.attendance):ukAttendance;
+      ukAchievements = d.achievements?JSON.parse(d.achievements):ukAchievements;
+      ukMembers = d.members?JSON.parse(d.members):ukMembers;
+      ukSettings = d.settings?JSON.parse(d.settings):ukSettings;
+      ukFeeData = d.fees?JSON.parse(d.fees):ukFeeData;
+      ukLogoURL = d.logo||ukLogoURL;
+      
       localStorage.setItem('uk_ts',remoteTs);
 
-      // Load student photos from separate docs
-      for(const s of ukStudents){
-        try{
-          const photoDoc = await getDoc(doc(db,'student_photos','st_'+s.id));
-          if(photoDoc.exists() && photoDoc.data().photo) s.photo = photoDoc.data().photo;
-        }catch(e){}
-      }
+      // Merge existing photos before setting global state to prevent "default user" flickering
+      incomingStudents.forEach(s => {
+        const current = ukStudents.find(lx => lx.id === s.id);
+        if(current && current.photo && !s.photo) s.photo = current.photo;
+      });
+
+      // Update global state IMMEDIATELY so names/list show up
+      ukStudents = incomingStudents;
       safeLSSet('uk3_students', JSON.stringify(ukStudents));
 
-      if(document.getElementById('uk-app').classList.contains('show')){
-        renderUkFeed();renderUkStudents();renderUkBranches();
-        updateUkTicker();showUkLogo();
+      // Initial render (names only / cached photos)
+      if(document.getElementById('uk-app').classList.contains('visible')){
+        renderAllUkScreens();
         showToast('☁️ Cloud sync ✅');
       }
+
+      // Background Progress Loading: Load missing photos in the background
+      for(const s of ukStudents) {
+        if(!s.photo) {
+          try {
+            const photoDoc = await getDoc(doc(db,'student_photos','st_'+s.id));
+            if(photoDoc.exists() && photoDoc.data().photo) {
+              s.photo = photoDoc.data().photo;
+              // Re-render UI only for visible/active components
+              requestAnimationFrame(() => {
+                if(document.getElementById('uk-app').classList.contains('visible')) {
+                   renderUkStudents();
+                   if(document.getElementById('uk-attendance').classList.contains('active')) renderUkAtt();
+                   if(document.getElementById('uk-report').classList.contains('active')) renderUkReport();
+                }
+              });
+            }
+          } catch(e){}
+        }
+      }
+      safeLSSet('uk3_students', JSON.stringify(ukStudents));
     });
+
+    function renderAllUkScreens() {
+      renderUkFeed();renderUkStudents();renderUkBranches();
+      updateUkTicker();showUkLogo();ukPopulateBranchDropdowns();ukPopulateStBranch();
+      if(document.getElementById('uk-attendance').classList.add('active')) renderUkAtt();
+    }
 
     window.dbReady=true;
     console.log('Firebase connected ✅');
@@ -421,15 +456,15 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
 <div class="home-screen" id="home-screen">
   <div class="home-title">Choose App</div>
   <div class="app-cards">
-    <div class="app-card app-card-sp" onclick="launchApp('sp')">
-      <div class="app-card-icon"><img src="./icon-192.png" style="width:48px;height:48px;border-radius:14px;object-fit:cover;"/></div>
-      <div class="app-card-info">
-        <div class="app-card-name" style="color:#c9a227;font-family:Georgia,serif;">SP SPORTS</div>
-        <div class="app-card-sub" style="color:#884444;">Medal &amp; Trophies</div>
-        <div style="font-size:11px;color:#665500;margin-top:6px;">Catalog · Orders · Posters · Customers</div>
-      </div>
-      <div class="app-card-arrow" style="color:#c9a227;">›</div>
-    </div>
+     <div class="app-card app-card-sp" onclick="launchApp('sp')">
+       <div class="app-card-icon"><img src="./icon-192.png" style="width:48px;height:48px;border-radius:14px;object-fit:cover;"/></div>
+       <div class="app-card-info">
+         <div class="app-card-name" style="color:#c9a227;font-family:Georgia,serif;">SPORTS HUB</div>
+         <div class="app-card-sub" style="color:#884444;">Medal &amp; Resources</div>
+         <div style="font-size:11px;color:#665500;margin-top:6px;">Catalog · Orders · Google Drive · Customers</div>
+       </div>
+       <div class="app-card-arrow" style="color:#c9a227;">›</div>
+     </div>
     <div class="app-card app-card-uk" onclick="launchApp('uk')">
       <div class="app-card-icon"><img src="./icon-192.png" style="width:48px;height:48px;border-radius:14px;object-fit:cover;"/></div>
       <div class="app-card-info">
@@ -451,8 +486,8 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
   <div class="hdr">
     <div id="sp-logo-wrap" style="display:none;"><img id="sp-logo" style="height:34px;object-fit:contain;border-radius:6px;"/></div>
     <div>
-      <div style="font-family:Georgia,serif;font-size:16px;color:#c9a227;font-weight:900;letter-spacing:2px;">SP SPORTS</div>
-      <div style="font-size:9px;color:#cc1111;letter-spacing:2px;text-transform:uppercase;">Medal &amp; Trophies</div>
+      <div id="sp-header-name" style="font-family:Georgia,serif;font-size:16px;color:#c9a227;font-weight:900;letter-spacing:2px;">SPORTS HUB</div>
+      <div id="sp-header-tag" style="font-size:9px;color:#cc1111;letter-spacing:2px;text-transform:uppercase;">Medal &amp; Resources</div>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
       <div id="sp-insta-btn" style="display:none;"><a id="sp-insta-link" href="#" target="_blank" style="text-decoration:none;"><div style="background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);border-radius:10px;padding:5px 10px;font-size:11px;font-weight:700;color:#fff;display:flex;align-items:center;gap:4px;cursor:pointer;">📸 Instagram</div></a></div>
@@ -583,7 +618,7 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
       <div class="card">
         <div class="sec-hd">Shop Details</div>
         <div class="row">
-          <div style="flex:2;"><div class="lbl">Name</div><input id="sp-s-name" value="SP Sports"/></div>
+          <div style="flex:2;"><div class="lbl">Name</div><input id="sp-s-name" value="SPORTS HUB"/></div>
           <div style="flex:2;"><div class="lbl">Tagline</div><input id="sp-s-tag" value="Medal & Trophies"/></div>
         </div>
         <div class="row">
@@ -594,6 +629,12 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
         <div class="row"><div style="flex:1;"><div class="lbl">Website/Instagram</div><input id="sp-s-web" placeholder="www.spsports.in"/></div></div>
         <div class="row"><div style="flex:1;"><div class="lbl">Instagram Page Link</div><input id="sp-s-insta" placeholder="https://www.instagram.com/spsports" type="url"/></div></div>
         <button class="btn btn-accent-sp" onclick="saveSpSettings()">Save Settings</button>
+      </div>
+      <!-- SHARED HUB LINK -->
+      <div class="card">
+        <div class="sec-hd">Shared Hub Link</div>
+        <div class="row"><div style="flex:1;"><div class="lbl">Google Drive / Resource Link</div><input id="sp-s-hublink" placeholder="https://share.google/..."/></div></div>
+        <div id="sp-hublink-show" style="display:none;margin-top:8px;"><a id="sp-hublink-a" href="#" target="_blank" style="text-decoration:none;"><button class="btn btn-wa" style="width:100%;font-size:13px;background:linear-gradient(135deg,#0055ff,#0033aa);">📁 Open Sports Hub Drive</button></a></div>
       </div>
       <!-- ONE-TIME SYNC CARD -->
       <div class="card" style="background:linear-gradient(135deg,#0a1a00,#142800);border:1px solid #25D366;margin-top:10px;">
@@ -700,7 +741,8 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
   <div class="more-overlay" id="sp-more-overlay" onclick="closeSpMore()"></div>
   <div class="more-menu" id="sp-more-menu" style="bottom:calc(64px + var(--safe-bottom));">
     <div class="more-grid">
-      <div class="more-item" onclick="spGoScMore('sp-pl')"><div style="font-size:24px;">📊</div><div class="more-item-label">P&L</div></div>
+      <div class="more-item" onclick="spGoScMore('sp-pl')"><div style="font-size:24px;">📊</div><div class="more-item-label">Profit/Loss</div></div>
+      <div class="more-item" id="sp-more-hub-item" style="display:none;"><a id="sp-more-hub-a" href="#" target="_blank" style="text-decoration:none;display:flex;flex-direction:column;align-items:center;"><div style="font-size:24px;">📁</div><div class="more-item-label">Drive Hub</div></a></div>
       <div class="more-item" onclick="spGoScMore('sp-poster')"><div style="font-size:24px;">🎨</div><div class="more-item-label">Poster</div></div>
       <div class="more-item" onclick="spGoScMore('sp-settings')"><div style="font-size:24px;">⚙</div><div class="more-item-label">Settings</div></div>
       <div class="more-item" onclick="goHome()"><div style="font-size:24px;">🏠</div><div class="more-item-label">Home</div></div>
@@ -871,6 +913,7 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
           <div style="flex:1;"><select id="uk-att-branch" onchange="renderUkAtt()" style="font-size:12px;"><option value="">All Branches</option></select></div>
           <div style="flex:1;"><select id="uk-att-game" onchange="renderUkAtt()" style="font-size:12px;"><option value="">All Games</option><option>Silambam</option><option>Adimurai</option><option>Thang-Ta</option><option>Kurash</option><option>Gatka</option><option>Vietnam Vocotruyen</option></select></div>
           <button class="btn" style="font-size:11px;padding:8px 12px;border-color:#25D366;color:#25D366;" onclick="markUkAllP()">✓ All P</button>
+          <button class="btn" style="font-size:11px;padding:8px 12px;border-color:#4db8ff;color:#4db8ff;" onclick="genUkAttPoster()">🖼️ Daily Poster</button>
         </div>
         <div id="uk-att-grid" class="att-grid"></div>
         <div id="uk-att-summary" style="margin-top:10px;font-size:13px;color:#336688;"></div>
@@ -914,7 +957,10 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
           <div style="flex:1;"><div class="lbl">Branch</div><select id="uk-rep-branch" onchange="renderUkReport()" style="font-size:12px;"><option value="">All</option></select></div>
           <div style="flex:1;"><div class="lbl">Game</div><select id="uk-rep-game" onchange="renderUkReport()" style="font-size:12px;"><option value="">All</option><option>Silambam</option><option>Adimurai</option><option>Thang-Ta</option><option>Kurash</option><option>Gatka</option><option>Vietnam Vocotruyen</option></select></div>
         </div>
-        <button class="btn btn-wa" onclick="shareUkReport()" style="margin-bottom:10px;">📤 Share WhatsApp</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn btn-wa" onclick="shareUkReport()" style="flex:1;">📤 Share WhatsApp</button>
+          <button class="btn" onclick="genUkMonthlyAwardPoster()" style="flex:1;border-color:#f0c040;color:#f0c040;background:#1a1400;">👑 Share Star Performers Poster</button>
+        </div>
         <div id="uk-rep-content"></div>
       </div>
     </div>
@@ -1089,7 +1135,7 @@ function safeLSSet(key,val){try{localStorage.setItem(key,val);}catch(e){var t=ty
 // ═══════════════════════════════════
 let spProducts=JSON.parse(localStorage.getItem('sp_products')||'[]');
 let spCustomers=JSON.parse(localStorage.getItem('sp_customers')||'[]');
-let spSettings=JSON.parse(localStorage.getItem('sp_settings')||'{"name":"SP Sports","tagline":"Medal & Trophies","ph1":"","ph2":"","addr":"","web":"","insta":""}');
+let spSettings=JSON.parse(localStorage.getItem('sp_settings')||'{"name":"SPORTS HUB","tagline":"Medals & Hub","ph1":"","ph2":"","addr":"","web":"","insta":"","hubLink":""}');
 let spLogoURL=localStorage.getItem('sp_logo')||null;
 let spLogoImg=null;
 let spCart={};
@@ -1163,18 +1209,34 @@ function loadSpSettings(){
   document.getElementById('sp-s-addr').value=spSettings.addr||'';
   document.getElementById('sp-s-web').value=spSettings.web||'';
   document.getElementById('sp-s-insta').value=spSettings.insta||'';
+  document.getElementById('sp-s-hublink').value=spSettings.hubLink||'';
   showSpLogo();
   showSpInstaBtn();
+  showSpHubLink();
+}
+function showSpHubLink(){
+    const btn=document.getElementById('sp-hublink-show');
+    const link=document.getElementById('sp-hublink-a');
+    if(spSettings.hubLink){
+        link.href=spSettings.hubLink;
+        btn.style.display='block';
+        const moreA=document.getElementById('sp-more-hub-a');
+        if(moreA){moreA.href=spSettings.hubLink;document.getElementById('sp-more-hub-item').style.display='flex';}
+    }else{
+        btn.style.display='none';
+        if(document.getElementById('sp-more-hub-item'))document.getElementById('sp-more-hub-item').style.display='none';
+    }
 }
 function saveSpSettings(){
   spSettings={
-    name:document.getElementById('sp-s-name').value.trim()||'SP Sports',
+    name:document.getElementById('sp-s-name').value.trim()||'SPORTS HUB',
     tagline:document.getElementById('sp-s-tag').value.trim(),
     ph1:document.getElementById('sp-s-ph1').value.trim(),
     ph2:document.getElementById('sp-s-ph2').value.trim(),
     addr:document.getElementById('sp-s-addr').value.trim(),
     web:document.getElementById('sp-s-web').value.trim(),
-    insta:document.getElementById('sp-s-insta').value.trim()
+    insta:document.getElementById('sp-s-insta').value.trim(),
+    hubLink:document.getElementById('sp-s-hublink').value.trim()||''
   };
   spSave();showSpInstaBtn();showToast('Settings saved! ✅');
 }
@@ -1223,7 +1285,12 @@ let ukCurEvPoster=null,ukCurStPhoto=null,ukCurStVideo=null;
 let ukCurAchPhoto=null,ukCurAchCert=null,ukCurAchVideo=null;
 let ukCurMemPhoto=null,ukCurBrPhoto=null;
 
-function ukSaveAll(){safeLSSet('uk3_posts',JSON.stringify(ukPosts));safeLSSet('uk3_events',JSON.stringify(ukEvents));safeLSSet('uk3_lives',JSON.stringify(ukLiveSessions));safeLSSet('uk3_students',JSON.stringify(ukStudents));safeLSSet('uk3_branches',JSON.stringify(ukBranches));safeLSSet('uk3_att',JSON.stringify(ukAttendance));safeLSSet('uk3_ach',JSON.stringify(ukAchievements));safeLSSet('uk3_members',JSON.stringify(ukMembers));safeLSSet('uk3_settings',JSON.stringify(ukSettings));safeLSSet('uk3_fees',JSON.stringify(ukFeeData));localStorage.setItem('uk_ts',Date.now());if(window.cloudSaveUK)cloudSaveUK();}
+function ukSaveAll(){
+  if(!ukStudents || (ukStudents.length === 0 && localStorage.getItem('uk3_students') && JSON.parse(localStorage.getItem('uk3_students')).length > 0)) {
+    console.warn('Safety: Attempted to save empty students over existing data. Blocked.');
+    return;
+  }
+  safeLSSet('uk3_posts',JSON.stringify(ukPosts));safeLSSet('uk3_events',JSON.stringify(ukEvents));safeLSSet('uk3_lives',JSON.stringify(ukLiveSessions));safeLSSet('uk3_students',JSON.stringify(ukStudents));safeLSSet('uk3_branches',JSON.stringify(ukBranches));safeLSSet('uk3_att',JSON.stringify(ukAttendance));safeLSSet('uk3_ach',JSON.stringify(ukAchievements));safeLSSet('uk3_members',JSON.stringify(ukMembers));safeLSSet('uk3_settings',JSON.stringify(ukSettings));safeLSSet('uk3_fees',JSON.stringify(ukFeeData));localStorage.setItem('uk_ts',Date.now());if(window.cloudSaveUK)cloudSaveUK();}
 
 function ukGoSc(id,el){document.querySelectorAll('#uk-app .bnav-item').forEach(b=>b.classList.remove('active'));document.querySelectorAll('#uk-app .sc').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');if(el)el.classList.add('active');document.getElementById('uk-content').scrollTo(0,0);const a={'uk-feed':renderUkFeed,'uk-events':renderUkEvents,'uk-live':renderUkPastLives,'uk-students':()=>{ukPopulateBranchDropdowns();ukPopulateStBranch();renderUkStudents();},'uk-attendance':()=>{ukPopulateAttFilters();renderUkAtt();},'uk-achievements':()=>{ukPopulateAchSt();renderUkAch();},'uk-report':()=>{ukPopulateRepFilters();const n=new Date();document.getElementById('uk-rep-month').value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');renderUkReport();},'uk-branches':renderUkBranches,'uk-members':renderUkMembers,'uk-settings':loadUkSettings,'uk-fees':()=>{ukPopulateFeeFilters();renderUkFees();}};if(a[id])a[id]();}
 function toggleUkMore(){document.getElementById('uk-more-menu').classList.toggle('open');document.getElementById('uk-more-overlay').classList.toggle('open');}
@@ -1305,7 +1372,21 @@ function markUkAllP(){
   _attCloudTimer=setTimeout(()=>{ if(window.cloudSaveUK)cloudSaveUK(); },2000);
   showToast('All marked Present! ✅');
 }
-function updateUkAttShare(date,sts){const el=document.getElementById('uk-att-share-row');const pr=sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='present');const ab=sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='absent');const dStr=new Date(date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});let msg=`🥋 *${ukSettings.name||'Uyir Kalai'} — Attendance*\n📅 ${dStr}\n\n✅ *Present (${pr.length}):*\n${pr.map((s,i)=>`${i+1}. ${s.name} — ${s.game}`).join('\n')||'None'}\n\n❌ *Absent (${ab.length}):*\n${ab.map((s,i)=>`${i+1}. ${s.name} — ${s.game}`).join('\n')||'None'}`;if(ukSettings.ph)msg+=`\n\n📞 ${ukSettings.ph}`;const enc=encodeURIComponent(msg);const parentLinks=ab.map(s=>s.phone?`<a href="https://wa.me/91${s.phone}?text=${encodeURIComponent(`🏫 *${ukSettings.name||'Uyir Kalai'}*\n\n${s.name} today (${dStr}) absent.\n\n📞 ${ukSettings.ph||''}`)}" target="_blank" style="text-decoration:none;"><button class="btn" style="font-size:11px;padding:6px 10px;border-color:#ff4444;color:#ff4444;">Notify: ${s.name.split(' ')[0]}</button></a>`:null).filter(Boolean).join('');el.innerHTML=`<a href="https://wa.me/?text=${enc}" target="_blank" style="text-decoration:none;"><button class="btn btn-wa" style="font-size:12px;">📤 Share Attendance</button></a>${parentLinks}<span style="font-size:12px;color:#336688;align-self:center;margin-left:4px;">✅ ${pr.length}  ❌ ${ab.length}</span>`;}
+function updateUkAttShare(date,sts){
+  const el=document.getElementById('uk-att-share-row');
+  const pr=sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='present');
+  const ab=sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='absent');
+  const dStr=new Date(date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  let msg=`🥋 *${ukSettings.name||'Uyir Kalai'} — Attendance*\n📅 ${dStr}\n\n✅ *Present (${pr.length}):*\n${pr.map((s,i)=>`${i+1}. ${s.name} — ${s.game}`).join('\n')||'None'}\n\n❌ *Absent (${ab.length}):*\n${ab.map((s,i)=>`${i+1}. ${s.name} — ${s.game}`).join('\n')||'None'}`;
+  if(ukSettings.ph)msg+=`\n\n📞 ${ukSettings.ph}`;
+  const enc=encodeURIComponent(msg);
+  const parentLinks=ab.map(s=>s.phone?`<a href="https://wa.me/91${s.phone}?text=${encodeURIComponent(`🏫 *${ukSettings.name||'Uyir Kalai'}*\n\n${s.name} today (${dStr}) absent.\n\n📞 ${ukSettings.ph||''}`)}" target="_blank" style="text-decoration:none;"><button class="btn" style="font-size:11px;padding:6px 10px;border-color:#ff4444;color:#ff4444;">Notify: ${s.name.split(' ')[0]}</button></a>`:null).filter(Boolean).join('');
+  el.innerHTML=`
+    <a href="https://wa.me/?text=${enc}" target="_blank" style="text-decoration:none;"><button class="btn btn-wa" style="font-size:12px;">📤 WhatsApp</button></a>
+    <button class="btn" onclick="genUkDailyAttPoster('${date}')" style="font-size:12px;background:#032a44;border-color:#4db8ff;color:#d0eeff;">🖼️ Daily Poster</button>
+    ${parentLinks}
+    <span style="font-size:12px;color:#336688;align-self:center;margin-left:4px;">✅ ${pr.length}  ❌ ${ab.length}</span>`;
+}
 
 // UK Achievements
 function handleUkAchPhoto(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{compressImg(ev.target.result,600,600,0.65,function(d){ukCurAchPhoto=d;const t=document.getElementById('uk-ach-photo-thumb');t.src=ukCurAchPhoto;t.style.display='block';document.getElementById('uk-ach-photo-ph').style.display='none';});};r.readAsDataURL(f);}
@@ -1319,7 +1400,9 @@ function renderUkAch(){const el=document.getElementById('uk-ach-list');if(!ukAch
 
 // UK Report
 function ukPopulateRepFilters(){const el=document.getElementById('uk-rep-branch');if(el)el.innerHTML='<option value="">All Branches</option>'+ukBranches.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');}
-function renderUkReport(){const month=document.getElementById('uk-rep-month').value;const bf=document.getElementById('uk-rep-branch').value;const gf=document.getElementById('uk-rep-game').value;const el=document.getElementById('uk-rep-content');if(!month){el.innerHTML='';return;}const[yr,mo]=month.split('-');const days=new Date(parseInt(yr),parseInt(mo),0).getDate();let sts=ukStudents.filter(s=>{if(bf&&s.branchId!==bf)return false;if(gf&&s.game!==gf)return false;return true;});if(!sts.length){el.innerHTML='<div style="color:#336688;font-size:13px;margin-top:8px;">No students.</div>';return;}const rows=sts.map(s=>{let p=0,a=0;for(let d=1;d<=days;d++){const dt=`${yr}-${mo}-${String(d).padStart(2,'0')}`;const att=ukAttendance[dt]&&ukAttendance[dt][s.id];if(att==='present')p++;else if(att==='absent')a++;}return{s,p,a};}).sort((a,b)=>b.p-a.p);el.innerHTML=`<div style="margin-top:10px;">${rows.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #0a2a44;flex-wrap:wrap;"><div style="font-size:18px;min-width:26px;">${i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1)+'.'}</div>${r.s.photo?`<img src="${r.s.photo}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid #4db8ff;flex-shrink:0;"/>`:`<div style="width:38px;height:38px;border-radius:50%;background:#010d15;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #0a2a44;flex-shrink:0;">👤</div>`}<div style="flex:1;min-width:80px;"><div style="font-size:13px;font-weight:700;color:#d0eeff;">${r.s.name}</div><div style="font-size:10px;color:#4db8ff;">${r.s.game}</div></div><div style="display:flex;gap:12px;align-items:center;"><div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#25D366;">${r.p}</div><div style="font-size:9px;color:#336688;">Present</div></div><div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#ff4444;">${r.a}</div><div style="font-size:9px;color:#336688;">Absent</div></div></div>${r.s.phone?`<a href="https://wa.me/91${r.s.phone}?text=${encodeURIComponent(`📊 ${r.s.name} — ${new Date(parseInt(yr),parseInt(mo)-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'})}\n✅ Present: ${r.p}\n❌ Absent: ${r.a}\n\n${ukSettings.name||'Uyir Kalai'}`)}" target="_blank" style="text-decoration:none;"><button class="btn btn-wa" style="font-size:10px;padding:4px 8px;">WA</button></a>`:''}</div>`).join('')}</div>`;}
+function renderUkReport(){const month=document.getElementById('uk-rep-month').value;const bf=document.getElementById('uk-rep-branch').value;const gf=document.getElementById('uk-rep-game').value;const el=document.getElementById('uk-rep-content');if(!month){el.innerHTML='';return;}const[yr,mo]=month.split('-');const days=new Date(parseInt(yr),parseInt(mo),0).getDate();let sts=ukStudents.filter(s=>{if(bf&&s.branchId!==bf)return false;if(gf&&s.game!==gf)return false;return true;});if(!sts.length){el.innerHTML='<div style="color:#336688;font-size:13px;margin-top:8px;">No students.</div>';return;}const rows=sts.map(s=>{let p=0,a=0;for(let d=1;d<=days;d++){const dt=`${yr}-${mo}-${String(d).padStart(2,'0')}`;const att=ukAttendance[dt]&&ukAttendance[dt][s.id];if(att==='present')p++;else if(att==='absent')a++;}return{s,p,a};}).sort((a,b)=>b.p-a.p);el.innerHTML=`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+  <button class="btn btn-gold" onclick="genUkMonthlyAwardPoster('${month}')" style="font-size:12px;width:100%;padding:10px;">👑 Share Star Performers Poster</button>
+</div><div style="margin-top:10px;">${rows.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #0a2a44;flex-wrap:wrap;"><div style="font-size:18px;min-width:26px;">${i===0?'👑':i===1?'🥈':i===2?'🥉':String(i+1)+'.'}</div>${r.s.photo?`<img src="${r.s.photo}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid #4db8ff;flex-shrink:0;"/>`:`<div style="width:38px;height:38px;border-radius:50%;background:#010d15;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #0a2a44;flex-shrink:0;">👤</div>`}<div style="flex:1;min-width:80px;"><div style="font-size:13px;font-weight:700;color:#d0eeff;">${r.s.name}</div><div style="font-size:10px;color:#4db8ff;">${r.s.game}</div></div><div style="display:flex;gap:12px;align-items:center;"><div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#25D366;">${r.p}</div><div style="font-size:9px;color:#336688;">Present</div></div><div style="text-align:center;"><div style="font-size:18px;font-weight:800;color:#ff4444;">${r.a}</div><div style="font-size:9px;color:#336688;">Absent</div></div></div>${r.s.phone?`<a href="https://wa.me/91${r.s.phone}?text=${encodeURIComponent(`📊 ${r.s.name} — ${new Date(parseInt(yr),parseInt(mo)-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'})}\n✅ Present: ${r.p}\n❌ Absent: ${r.a}\n\n${ukSettings.name||'Uyir Kalai'}`)}" target="_blank" style="text-decoration:none;"><button class="btn btn-wa" style="font-size:10px;padding:4px 8px;">WA</button></a>`:''}</div>`).join('')}</div>`;}
 function shareUkReport(){const month=document.getElementById('uk-rep-month').value;if(!month)return;const[yr,mo]=month.split('-');const days=new Date(parseInt(yr),parseInt(mo),0).getDate();const bf=document.getElementById('uk-rep-branch').value;const gf=document.getElementById('uk-rep-game').value;let sts=ukStudents.filter(s=>{if(bf&&s.branchId!==bf)return false;if(gf&&s.game!==gf)return false;return true;});const mStr=new Date(parseInt(yr),parseInt(mo)-1,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});const rows=sts.map(s=>{let p=0,a=0;for(let d=1;d<=days;d++){const dt=`${yr}-${mo}-${String(d).padStart(2,'0')}`;const att=ukAttendance[dt]&&ukAttendance[dt][s.id];if(att==='present')p++;else if(att==='absent')a++;}return{s,p,a};}).sort((a,b)=>b.p-a.p);let msg=`🥋 *${ukSettings.name||'Uyir Kalai'} — Monthly Report*\n📅 ${mStr}\n\n`;msg+=rows.map((r,i)=>`${i+1}. ${r.s.name} (${r.s.game}) — ✅ ${r.p}  ❌ ${r.a}`).join('\n');if(ukSettings.ph)msg+=`\n\n📞 ${ukSettings.ph}`;window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,'_blank');}
 
 // UK Branches
@@ -1777,6 +1860,177 @@ function renderSpPLEntries(){
       </div>
     </div>`;
   }).join('');
-}</script>
+}
+
+// ── POSTER GENERATORS ──
+async function genUkAttPoster(date) {
+  if(!date) date = document.getElementById('uk-att-date').value;
+  if(!date) { showToast('⚠️ Select date first'); return; }
+  const dStr = new Date(date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  const bf=document.getElementById('uk-att-branch').value;
+  const gf=document.getElementById('uk-att-game').value;
+  let sts=ukStudents.filter(s=>{if(bf&&s.branchId!==bf)return false;if(gf&&s.game!==gf)return false;return true;});
+  if(!sts.length) return;
+
+  showToast('🎨 Generating Poster...');
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080; canvas.height = 1350;
+  const ctx = canvas.getContext('2d');
+
+  // BG
+  const grad = ctx.createLinearGradient(0,0,0,1350);
+  grad.addColorStop(0, '#000d1a'); grad.addColorStop(1, '#001a33');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,1080,1350);
+  
+  // Header
+  ctx.fillStyle = '#4db8ff'; ctx.font = 'bold 50px Arial'; ctx.textAlign = 'center';
+  ctx.fillText(ukSettings.name || 'UYIR KALAI', 540, 100);
+  ctx.fillStyle = '#d0eeff'; ctx.font = '40px Arial';
+  ctx.fillText('Daily Attendance — ' + dStr, 540, 160);
+
+  // Stats
+  const pr = sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='present').length;
+  const ab = sts.filter(s=>ukAttendance[date]&&ukAttendance[date][s.id]==='absent').length;
+  ctx.fillStyle = '#25D366'; ctx.fillText('✅ Present: ' + pr, 340, 230);
+  ctx.fillStyle = '#ff4444'; ctx.fillText('❌ Absent: ' + ab, 740, 230);
+
+  // Grid
+  const cols = 4; const rowH = 220; const cellW = 1080/cols;
+  let y = 300;
+  for(let i=0; i<sts.length; i++) {
+    const s = sts[i];
+    const col = i % cols;
+    const row = Math.floor(i/cols);
+    const x = col * cellW + cellW/2;
+    const ry = y + (row * rowH);
+    
+    if(ry > 1250) break; 
+
+    const isP = ukAttendance[date] && ukAttendance[date][s.id] === 'present';
+    const color = isP ? '#25D366' : '#ff4444';
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x, ry, 60, 0, Math.PI*2); ctx.clip();
+    if(s.photo) {
+        const img = await new Promise(res => { const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.src=s.photo; });
+        ctx.drawImage(img, x-60, ry-60, 120, 120);
+    } else {
+        ctx.fillStyle = '#011220'; ctx.fillRect(x-60, ry-60, 120, 120);
+        ctx.fillStyle = '#4db8ff'; ctx.font = '50px Arial'; ctx.fillText('👤', x, ry+20);
+    }
+    ctx.restore();
+    ctx.lineWidth = 4; ctx.strokeStyle = color; ctx.stroke();
+
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px Arial';
+    ctx.fillText(s.name.split(' ')[0], x, ry + 95);
+    ctx.fillStyle = color; ctx.font = '18px Arial';
+    ctx.fillText(isP ? 'PRESENT' : 'ABSENT', x, ry + 120);
+  }
+
+  // Branding
+  ctx.textAlign = 'center'; ctx.fillStyle = '#336688'; ctx.font = 'bold 24px Arial';
+  ctx.fillText('uyirkalai.in | ' + (ukSettings.ph || ''), 540, 1310);
+
+  const link = document.createElement('a');
+  link.download = `UK_Attendance_${date}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg', 0.9);
+  link.click();
+  showToast('Poster generated! 🖼️');
+}
+
+async function genUkMonthlyAwardPoster(month) {
+  if(!month) month = document.getElementById('uk-rep-month').value;
+  if(!month) { showToast('⚠️ Select month first'); return; }
+  const [yr, mo] = month.split('-');
+  const mStr = new Date(parseInt(yr), parseInt(mo)-1, 1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  const bf=document.getElementById('uk-rep-branch').value;
+  const gf=document.getElementById('uk-rep-game').value;
+  let sts=ukStudents.filter(s=>{if(bf&&s.branchId!==bf)return false;if(gf&&s.game!==gf)return false;return true;});
+  const days = new Date(parseInt(yr), parseInt(mo), 0).getDate();
+
+  const rows = sts.map(s => {
+    let p=0, a=0;
+    for(let d=1; d<=days; d++){
+      const dt=`${yr}-${mo}-${String(d).padStart(2,'0')}`;
+      const att=ukAttendance[dt]&&ukAttendance[dt][s.id];
+      if(att==='present') p++; else if(att==='absent') a++;
+    }
+    return {s,p,a};
+  }).sort((a,b) => b.p - a.p).slice(0, 10); 
+
+  if(!rows.length) return;
+
+  showToast('📅 Generating Awards Poster...');
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080; canvas.height = 1920;
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createRadialGradient(540, 960, 100, 540, 960, 1000);
+  grad.addColorStop(0, '#001a33'); grad.addColorStop(1, '#000810');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,1080,1920);
+
+  ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 20; ctx.strokeRect(40,40,1000,1840);
+  ctx.strokeStyle = '#4db8ff'; ctx.lineWidth = 2; ctx.strokeRect(60,60,960,1800);
+
+  ctx.fillStyle = '#c9a227'; ctx.font = 'bold 80px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('STAR PERFORMERS', 540, 200);
+  ctx.fillStyle = '#4db8ff'; ctx.font = '40px Arial';
+  ctx.fillText(mStr.toUpperCase(), 540, 270);
+  ctx.fillStyle = '#fff'; ctx.font = '30px Arial';
+  ctx.fillText(ukSettings.name || 'UYIR KALAI NATIONAL SPORTS ACADEMY', 540, 320);
+
+  const king = rows[0];
+  const ky = 600;
+  ctx.font = '100px Arial'; ctx.fillText('👑', 540, ky - 140);
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(540, ky, 150, 0, Math.PI*2); ctx.clip();
+  if(king.s.photo) {
+    const img = await new Promise(res => { const im=new Image(); im.crossOrigin='anonymous'; im.onload=()=>res(im); im.src=king.s.photo; });
+    ctx.drawImage(img, 540-150, ky-150, 300, 300);
+  } else {
+    ctx.fillStyle = '#0a2a44'; ctx.fillRect(390, 450, 300, 300);
+    ctx.fillStyle = '#fff'; ctx.font = '120px Arial'; ctx.fillText('👤', 540, ky+40);
+  }
+  ctx.restore();
+  ctx.lineWidth = 10; ctx.strokeStyle = '#c9a227'; ctx.stroke();
+
+  ctx.fillStyle = '#f0c040'; ctx.font = 'bold 55px Arial';
+  ctx.fillText(king.s.name, 540, ky + 220);
+  ctx.fillStyle = '#25D366'; ctx.font = '40px Arial';
+  ctx.fillText(`Present: ${king.p} / ${days} Days`, 540, ky + 280);
+  ctx.fillStyle = '#fff'; ctx.font = 'italic 30px Arial';
+  ctx.fillText('🏆 MONTH WINNER 🏆', 540, ky + 340);
+
+  let py = 1100;
+  for(let i=1; i<rows.length; i++) {
+    const r = rows[i];
+    const ry = py + (i-1) * 110;
+    ctx.fillStyle = 'rgba(77, 184, 255, 0.05)';
+    ctx.fillRect(100, ry-50, 880, 100);
+    
+    ctx.textAlign = 'left';
+    ctx.fillStyle = i < 3 ? '#c9a227' : '#4db8ff';
+    ctx.font = 'bold 36px Arial';
+    ctx.fillText(`${i+1}. ${r.s.name}`, 150, ry + 12);
+    
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#25D366'; ctx.font = 'bold 32px Arial';
+    ctx.fillText(`${r.p} Days / ${r.a} Absent`, 930, ry + 12);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#c9a227'; ctx.font = 'bold 50px Arial';
+  ctx.fillText('CONGRATULATIONS!', 540, 1750);
+  ctx.fillStyle = '#336688'; ctx.font = '24px Arial';
+  ctx.fillText(ukSettings.addr || '', 540, 1810);
+
+  const link = document.createElement('a');
+  link.download = `UK_Awards_${month}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg', 0.9);
+  link.click();
+  showToast('Award Poster generated! 👑🏆');
+}
+</script>
 </body>
 </html>
