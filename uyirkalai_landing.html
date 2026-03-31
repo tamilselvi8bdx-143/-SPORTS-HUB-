@@ -1511,10 +1511,16 @@ function showRosterBranches() {
   const branches = window.ukLiveBranches && window.ukLiveBranches.length > 0 ? window.ukLiveBranches : [{id:'Main', name:'Main Academy'}];
   
   branches.forEach(b => {
-    // Count students securely
-    const stCount = (window.ukLiveStudents||[]).filter(s => s.branch === b.name || (!s.branch && b.id==='Main')).length;
+    // Students use branchId (branch's id field), NOT branch name
+    const stCount = (window.ukLiveStudents||[]).filter(s => {
+      if(s.status === 'Inactive') return false;
+      // Match by branchId = b.id, OR by branch name (for backwards compatibility), OR no branch = show everywhere
+      const hasMatch = s.branchId === b.id || s.branch === b.name || s.branch === b.id;
+      if(!s.branchId && !s.branch) return true; // no branch set — show in all
+      return hasMatch;
+    }).length;
     html += `
-      <div class="branch-card" onclick="openBranch('${b.name || b.id}')">
+      <div class="branch-card" onclick="openBranch('${b.id}','${(b.name||b.id).replace(/'/g,"\\'")}')"> 
         <div class="bcard-icon">🏛️</div>
         <div class="bcard-name">${b.name || b.id} Branch</div>
         <div style="color:var(--muted);margin-top:8px;font-size:12px;letter-spacing:1px;">STUDENTS: ${stCount}</div>
@@ -1524,8 +1530,9 @@ function showRosterBranches() {
   cont.innerHTML = html;
 }
 
-function openBranch(branchName) {
-  currentRosterBranch = branchName;
+function openBranch(branchId, branchName) {
+  currentRosterBranch = branchId; // store the ID for matching
+  window.currentRosterBranchName = branchName || branchId;
   document.getElementById('roster-back').style.display = 'inline-block';
   document.getElementById('roster-search').style.display = 'block';
   document.getElementById('roster-search').value = '';
@@ -1602,15 +1609,18 @@ function renderStudents(searchOverride) {
   
   const allStudents = window.ukLiveStudents || [];
   
-  // Branch matching — case-insensitive + trimmed
-  const branchLower = (currentRosterBranch || '').toLowerCase().trim();
+  // Students are saved with 'branchId' = branch.id in the admin app
+  // currentRosterBranch holds the branch ID (b.id)
+  const activeBranchId = currentRosterBranch;
   
   const activeStudents = allStudents.filter(s => {
     if (s.status === 'Inactive') return false;
-    const sBranch = (s.branch || '').toLowerCase().trim();
-    // If student has no branch, show in all branches
-    if (!sBranch) return true;
-    return sBranch === branchLower;
+    // If student has no branch at all, show in every branch
+    if (!s.branchId && !s.branch) return true;
+    // Match by branchId (primary), or by branch name/id (legacy fallback)
+    return s.branchId === activeBranchId 
+        || s.branch === activeBranchId
+        || (s.branch || '').toLowerCase().trim() === (activeBranchId || '').toLowerCase().trim();
   });
   
   const filtered = activeStudents.filter(s => s.name && s.name.toLowerCase().includes(searchT));
