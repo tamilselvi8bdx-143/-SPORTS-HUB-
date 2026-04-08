@@ -52,7 +52,7 @@ body{font-family:sans-serif;background:#050a0f;}
 
 /* CONTENT */
 .content-area{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;padding-bottom:calc(64px + var(--safe-bottom));}
-.sc{display:none;padding:12px 14px;}.sc.active{display:block;}
+.sc{display:none;padding:12px 14px;}.sc.active{display:block;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 
 /* BOTTOM NAV */
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:stretch;z-index:100;padding-bottom:var(--safe-bottom);box-shadow:0 -4px 20px rgba(0,0,0,0.6);}
@@ -223,6 +223,26 @@ textarea{resize:vertical;min-height:80px;}
       });
     };
 
+    // HD Gallery compression — 800x800 at 0.82 for website display
+    window.compressGalHD = function(base64Data){
+      return new Promise((resolve)=>{
+        if(!base64Data||!base64Data.startsWith('data:')){resolve(base64Data||'');return;}
+        const img = new Image();
+        img.onload = function(){
+          const maxSize = 800;
+          const scale = Math.min(maxSize/img.width, maxSize/img.height, 1);
+          const w = Math.round(img.width * scale);
+          const h = Math.round(img.height * scale);
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(cv.toDataURL('image/jpeg', 0.82));
+        };
+        img.onerror = ()=>resolve('');
+        img.src = base64Data;
+      });
+    };
+
     const SP_DOC = doc(db,'apps','sp_sports');
     const UK_DOC = doc(db,'apps','uyir_kalai');
 
@@ -286,7 +306,7 @@ textarea{resize:vertical;min-height:80px;}
         const logoCloud = ukLogoURL&&ukLogoURL.startsWith('data:')
           ? await compressForCloud(ukLogoURL) : (ukLogoURL||'');
         const webGalCloud = await Promise.all(ukWebGallery.map(async(g)=>({
-          ...g, photo: g.photo&&g.photo.startsWith('data:') ? await compressForCloud(g.photo) : (g.photo||'')
+          ...g, photo: g.photo&&g.photo.startsWith('data:') ? await compressGalHD(g.photo) : (g.photo||'')
         })));
 
         await setDoc(UK_DOC,{
@@ -1100,7 +1120,7 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
   </div><!-- uk-content -->
 
   <!-- UK WEBSITE EDITOR -->
-  <div id="uk-website" class="sc" style="position:absolute;top:0;left:0;right:0;bottom:0;overflow-y:auto;padding:20px;display:none;padding-bottom:100px;">
+  <div id="uk-website" class="sc" style="padding:20px;padding-bottom:120px;overflow-y:auto;height:100%;-webkit-overflow-scrolling:touch;">
     <div style="background:linear-gradient(135deg,#0a2a44,#010d15);padding:16px;border-radius:12px;margin-bottom:16px;border:1px solid #4db8ff;text-align:center;">
       <div style="font-size:24px;margin-bottom:4px;">🌐</div>
       <div style="font-size:16px;font-weight:800;color:#d0eeff;font-family:Georgia,serif;">WEBSITE CMS</div>
@@ -1186,11 +1206,20 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
         <div style="flex:1;"><div class="lbl">Year</div><input id="uk-master-ach-year" placeholder="2024"/></div>
       </div>
       <div class="row">
-        <div style="flex:1;"><div class="lbl">Certificate/Photo</div>
+        <div style="flex:1;">
+          <div class="lbl">Master HD Photo</div>
           <div class="upbox" onclick="document.getElementById('uk-master-ach-f').click()">
             <img id="uk-master-ach-thumb" style="width:100%;height:60px;object-fit:cover;border-radius:8px;display:none;margin:0 auto 4px;"/>
-            <div id="uk-master-ach-ph"><div style="font-size:20px;">🏅</div><div style="color:#d0eeff;font-size:10px;">Upload Photo</div></div>
+            <div id="uk-master-ach-ph"><div style="font-size:20px;">🥋</div><div style="color:#d0eeff;font-size:10px;">HD Photo</div></div>
             <input type="file" id="uk-master-ach-f" accept="image/*" style="display:none;" onchange="handleUkMasterAchPhoto(event)"/>
+          </div>
+        </div>
+        <div style="flex:1;">
+          <div class="lbl">Certificate Image</div>
+          <div class="upbox" onclick="document.getElementById('uk-master-cert-f').click()">
+            <img id="uk-master-cert-thumb" style="width:100%;height:60px;object-fit:cover;border-radius:8px;display:none;margin:0 auto 4px;"/>
+            <div id="uk-master-cert-ph"><div style="font-size:20px;">📜</div><div style="color:#d0eeff;font-size:10px;">Certificate</div></div>
+            <input type="file" id="uk-master-cert-f" accept="image/*" style="display:none;" onchange="handleUkMasterCertPhoto(event)"/>
           </div>
         </div>
         <div style="flex:2;"><div class="lbl">Certificate Link (optional)</div><input id="uk-master-ach-link" placeholder="https://drive.google.com/..."/></div>
@@ -1220,7 +1249,13 @@ if(sessionStorage.getItem('spuk_auth')==='1'){
           </div>
         </div>
         <div style="flex:2;">
-          <div class="lbl">Certificate Link (Google Drive/Dropbox)</div>
+          <div class="lbl">Certificate Image Upload</div>
+          <div class="upbox" onclick="document.getElementById('uk-web-ach-cert-file').click()" style="height:50px;">
+            <img id="uk-web-ach-cert-thumb" style="height:44px;object-fit:cover;border-radius:4px;display:none;"/>
+            <div id="uk-web-ach-cert-ph" style="font-size:11px;color:#4db8ff;">📜 Upload Certificate</div>
+            <input type="file" id="uk-web-ach-cert-file" accept="image/*,application/pdf" style="display:none;" onchange="handleUkWebAchCert(event)"/>
+          </div>
+          <div class="lbl" style="margin-top:4px;">Certificate Link (optional)</div>
           <input id="uk-web-ach-cert" placeholder="https://drive.google.com/..."/>
           <div class="lbl" style="margin-top:4px;">Position / Medal</div>
           <input id="uk-web-ach-pos" placeholder="Gold / 1st Place"/>
@@ -2660,9 +2695,12 @@ function saveUkMasterAch(){
   const year=document.getElementById('uk-master-ach-year').value.trim();
   const link=document.getElementById('uk-master-ach-link').value.trim();
   if(!title){showToast('⚠️ Title குடு!');return;}
-  ukMasterAchievements.unshift({id:Date.now(),title,year,link,photo:ukCurMasterAchPhoto||''});
+  ukMasterAchievements.unshift({id:Date.now(),title,year,link,photo:ukCurMasterAchPhoto||'',certPhoto:ukCurMasterCertPhoto||''});
   localStorage.setItem('uk3_master_ach',JSON.stringify(ukMasterAchievements));
   ukCurMasterAchPhoto=null;
+  ukCurMasterCertPhoto=null;
+  document.getElementById('uk-master-cert-thumb').style.display='none';
+  document.getElementById('uk-master-cert-ph').style.display='block';
   document.getElementById('uk-master-ach-title').value='';
   document.getElementById('uk-master-ach-year').value='';
   document.getElementById('uk-master-ach-link').value='';
@@ -2700,6 +2738,30 @@ function handleUkWebAchPhoto(e){
   });};
   r.readAsDataURL(f);
 }
+let ukCurWebAchCertPhoto=null;
+function handleUkWebAchCert(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{ compressImg(ev.target.result,1400,1400,0.88,d=>{
+    ukCurWebAchCertPhoto=d;
+    const t=document.getElementById('uk-web-ach-cert-thumb');
+    t.src=d;t.style.display='block';
+    document.getElementById('uk-web-ach-cert-ph').style.display='none';
+  });};
+  r.readAsDataURL(f);
+}
+let ukCurMasterCertPhoto=null;
+function handleUkMasterCertPhoto(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{ compressImg(ev.target.result,1400,1400,0.88,d=>{
+    ukCurMasterCertPhoto=d;
+    const t=document.getElementById('uk-master-cert-thumb');
+    t.src=d;t.style.display='block';
+    document.getElementById('uk-master-cert-ph').style.display='none';
+  });};
+  r.readAsDataURL(f);
+}
 function ukFilterWebAchSt(){
   const bid=document.getElementById('uk-web-ach-branch').value;
   const sSel=document.getElementById('uk-web-ach-st');
@@ -2719,8 +2781,10 @@ function saveUkWebAch(){
     id:Date.now(), studentId:sid,
     studentName:s?s.name:'', game:s?s.game:'',
     photo:ukCurWebAchPhoto||s?.photo||'',
+    certPhoto:ukCurWebAchCertPhoto||'',
     title, date, cert, pos
   });
+  ukCurWebAchCertPhoto=null;
   localStorage.setItem('uk3_web_ach',JSON.stringify(ukWebAchievements2));
   ukCurWebAchPhoto=null;
   document.getElementById('uk-web-ach-title').value='';
@@ -2733,6 +2797,19 @@ function saveUkWebAch(){
   // Auto cloud sync
   if(window.cloudSaveUK) cloudSaveUK();
 }
+
+function ukAchToPDF(){
+  const d = window._ukAchPDFData||{};
+  if(!d.url){ showToast('⚠️ Generate poster first!'); return; }
+  const w = window.open('','_blank');
+  if(!w){ showToast('⚠️ Popup blocked! Allow popups.'); return; }
+  w.document.write('<html><head><title>'+(d.name||'Achievement')+'</title>'
+    +'<style>body{margin:0;padding:0;}img{width:100%;display:block;}</style>'
+    +'<script>window.onload=()=>window.print();</scr'+'ipt>'
+    +'</head><body><img src="'+d.url+'"/></body></html>');
+  w.document.close();
+}
+
 function renderUkWebAchList(){
   const el=document.getElementById('uk-web-ach-list');
   if(!el)return;
@@ -2782,13 +2859,29 @@ async function ukShareWebAch(idx){
   ctx.fillStyle='#25D366';ctx.font='bold 26px Arial';ctx.fillText('🏆 '+a.title,230,210);
   ctx.fillStyle='#fff';ctx.font='20px Arial';ctx.fillText(a.pos||'',230,250);
   ctx.fillStyle='#888';ctx.font='16px Arial';ctx.fillText(a.date?new Date(a.date).toLocaleDateString('en-IN',{month:'long',year:'numeric'}):'',230,280);
-  if(a.cert){ctx.fillStyle='#4db8ff';ctx.font='14px Arial';ctx.fillText('📄 Certificate: '+a.cert.slice(0,50)+'...',230,320);}
+  if(a.certPhoto){
+    try{
+      await new Promise(res=>{
+        const ci=new Image();
+        ci.onload=()=>{ ctx.drawImage(ci,460,200,300,200); res(); };
+        ci.onerror=()=>res();
+        ci.src=a.certPhoto;
+      });
+      ctx.strokeStyle='#c9a227';ctx.lineWidth=2;ctx.strokeRect(460,200,300,200);
+      ctx.fillStyle='#c9a227';ctx.font='bold 12px Arial';ctx.textAlign='center';
+      ctx.fillText('CERTIFICATE',610,418);
+    }catch(e){}
+  } else if(a.cert){
+    ctx.fillStyle='#4db8ff';ctx.font='14px Arial';ctx.textAlign='left';
+    ctx.fillText('📄 Certificate: '+a.cert.slice(0,50)+'...',230,320);
+  }
   ctx.fillStyle='#336688';ctx.font='14px Arial';ctx.textAlign='center';
   ctx.fillText((ukSettings.ph?'📞 '+ukSettings.ph:'')+'  ·  '+(ukSettings.addr||''),400,470);
   const dataUrl=canvas.toDataURL('image/jpeg',0.95);
   const sName = a.studentName||'';
   const sTitle = a.title||'';
   const sPos = a.pos||'';
+  window._ukAchPDFData={url:dataUrl,name:sName};
   const modal=document.createElement('div');
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
   modal.innerHTML = '<div style="width:100%;max-width:480px;background:#011220;border:1px solid #f0c040;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;max-height:95vh;">'
@@ -2799,8 +2892,9 @@ async function ukShareWebAch(idx){
     +'<div style="overflow-y:auto;padding:12px;"><img src="'+dataUrl+'" style="width:100%;border-radius:8px;"/></div>'
     +'<div style="padding:12px;background:#1a1400;border-top:1px solid #3a2a00;display:flex;gap:8px;flex-shrink:0;">'
     +'<a download="UK_Achievement_'+sName+'.jpg" href="'+dataUrl+'" style="flex:1;text-decoration:none;">'
-    +'<button style="width:100%;padding:10px;background:#0a2a44;border:1px solid #4db8ff;border-radius:10px;color:#4db8ff;font-weight:700;font-size:13px;cursor:pointer;">⬇️ Download</button>'
+    +'<button style="width:100%;padding:10px;background:#0a2a44;border:1px solid #4db8ff;border-radius:10px;color:#4db8ff;font-weight:700;font-size:13px;cursor:pointer;">⬇️ JPG</button>'
     +'</a>'
+    +'<button onclick="ukAchToPDF()" style="flex:1;padding:10px;background:#1a0000;border:1px solid #ff4444;border-radius:10px;color:#ff4444;font-weight:700;font-size:13px;cursor:pointer;">📄 PDF</button>'
     +'<button id="uk-ach-wa-btn" style="flex:1;padding:10px;background:#011a0d;border:1px solid #25D366;border-radius:10px;color:#25D366;font-weight:700;font-size:13px;cursor:pointer;">📲 WhatsApp</button>'
     +'</div></div>';
   document.body.appendChild(modal);
